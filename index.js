@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("ORCA Donation Proxy is live - Combo Edition!");
+    res.send("ORCA Donation Proxy is live - RoProxy Bypass Active!");
 });
 
 app.get("/api/items/:userId", async (req, res) => {
@@ -20,22 +20,23 @@ app.get("/api/items/:userId", async (req, res) => {
     try {
         console.log(`Fetching Gamepasses AND Clothing for User: ${userId}`);
         let allItems = [];
-// ==========================================
-        // STEP 1: FETCH CLOTHING (Updated with Headers)
+
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+
+        // ==========================================
+        // STEP 1: FETCH CLOTHING (Via RoProxy)
         // ==========================================
         try {
-            const catalogUrl = `https://catalog.roblox.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=30`;
-            const catalogRes = await fetch(catalogUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
-            });
+            const catalogUrl = `https://catalog.roproxy.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=30`;
+            const catalogRes = await fetch(catalogUrl, { headers });
+            
             if (catalogRes.ok) {
                 const catalogData = await catalogRes.json();
                 if (catalogData.data) {
                     for (const item of catalogData.data) {
-                        // Filter for Shirts, Pants, T-Shirts (AssetTypes 2, 11, 12)
-                        if (item.price > 0) {
+                        if (item.price && item.price > 0) {
                             allItems.push({
                                 Id: item.id,
                                 Name: item.name,
@@ -53,24 +54,30 @@ app.get("/api/items/:userId", async (req, res) => {
         }
 
         // ==========================================
-        // STEP 2: FETCH GAMEPASSES
+        // STEP 2: FETCH GAMEPASSES (Via RoProxy)
         // ==========================================
         try {
-            const gamesRes = await fetch(`https://games.roblox.com/v2/users/${userId}/games?accessFilter=Public&sortOrder=Asc&limit=50`);
+            // First get the games
+            const gamesUrl = `https://games.roproxy.com/v2/users/${userId}/games?accessFilter=Public&sortOrder=Asc&limit=50`;
+            const gamesRes = await fetch(gamesUrl, { headers });
+            
             if (gamesRes.ok) {
                 const gamesData = await gamesRes.json();
                 if (gamesData.data) {
                     for (const game of gamesData.data) {
-                        const passesRes = await fetch(`https://games.roblox.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`);
+                        // Then get passes for each game
+                        const passesUrl = `https://games.roproxy.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`;
+                        const passesRes = await fetch(passesUrl, { headers });
+                        
                         if (passesRes.ok) {
                             const passesData = await passesRes.json();
                             if (passesData.data) {
                                 for (const pass of passesData.data) {
-                                    if (pass.price > 0) {
+                                    if (pass.price && pass.price > 0) {
                                         allItems.push({
                                             Id: pass.id,
                                             Name: pass.name,
-                                            Type: "GamePass", // Tagged as gamepass
+                                            Type: "GamePass",
                                             Price: pass.price,
                                             ImageId: pass.id,
                                             Owned: false
@@ -89,15 +96,14 @@ app.get("/api/items/:userId", async (req, res) => {
         // ==========================================
         // STEP 3: SORT & RETURN
         // ==========================================
-        // Sort items from cheapest to most expensive
         allItems.sort((a, b) => a.Price - b.Price);
 
-        console.log(`Total items found: ${allItems.length}`);
+        console.log(`Success! Found ${allItems.length} items for ${userId}`);
         return res.json(allItems);
 
     } catch (error) {
-        console.error(`❌ Proxy Error:`, error.message);
-        return res.status(500).json({ error: "Failed to fetch combo items" });
+        console.error(`❌ Global Proxy Error:`, error.message);
+        return res.status(500).json({ error: "Internal server error" });
     }
 });
 
