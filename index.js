@@ -2,65 +2,39 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("💸 ORCA Donation Proxy (Ultra-Stable Build) Running");
+    res.send("💸 ORCA Proxy (Strict User Mode) Live");
 });
 
-// ===============================
-// IMPROVED SAFE FETCH
-// ===============================
+// Helper for RoProxy requests
 async function safeFetch(url) {
     try {
         const res = await fetch(url, {
-            headers: {
-                // High-quality User-Agent makes the proxy look like a real person
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-                "Accept": "application/json"
-            }
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" }
         });
-
-        if (!res.ok) {
-            console.log(`⚠️ RoProxy rejected request (Status: ${res.status}) - ${url}`);
-            return null;
-        }
-
-        return await res.json();
+        return res.ok ? await res.json() : null;
     } catch (err) {
-        console.log(`❌ Network error: ${err.message}`);
+        console.log(`❌ Fetch error: ${err.message}`);
         return null;
     }
 }
 
-// ===============================
-// STABLE COMBO FETCH
-// ===============================
 app.get("/api/items/:userId", async (req, res) => {
     const userId = req.params.userId;
+    if (!userId || isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
-    if (!userId || isNaN(userId)) {
-        return res.status(400).json({ error: "Invalid userId" });
-    }
-
-    console.log(`\n🔍 Fetching ALL items for user: ${userId}`);
+    console.log(`\n👤 Searching personal items for User: ${userId}`);
 
     try {
-        // We only use TWO URLs now. This prevents RoProxy rate-limiting.
-        const CLOTHING_URL = `https://catalog.roproxy.com/v1/search/items/details?Category=3&Subcategory=3&CreatorTargetId=${userId}&CreatorType=User&Limit=30`;
-        const GAMEPASS_URL = `https://catalog.roproxy.com/v1/search/items/details?Category=9&CreatorTargetId=${userId}&CreatorType=User&Limit=30`;
-
-        // Run both fetches at the same time for speed
-        const [clothingData, passData] = await Promise.all([
-            safeFetch(CLOTHING_URL),
-            safeFetch(GAMEPASS_URL)
-        ]);
-
         let allItems = [];
 
-        // Process Clothing
+        // --- STEP 1: FETCH PERSONAL CLOTHING ---
+        const clothingUrl = `https://catalog.roproxy.com/v1/search/items/details?Category=3&CreatorTargetId=${userId}&CreatorType=User&Limit=30`;
+        const clothingData = await safeFetch(clothingUrl);
+        
         if (clothingData && clothingData.data) {
             clothingData.data.forEach(item => {
                 if (item.price && item.price > 0) {
@@ -75,26 +49,44 @@ app.get("/api/items/:userId", async (req, res) => {
             });
         }
 
-        // Process Gamepasses
-        if (passData && passData.data) {
-            passData.data.forEach(pass => {
-                if (pass.price && pass.price > 0) {
-                    allItems.push({
-                        Id: pass.id,
-                        Name: pass.name,
-                        Type: "GamePass",
-                        Price: pass.price,
-                        ImageId: pass.id
+        // --- STEP 2: FETCH USER GAMES (UNIVERSES) ---
+        const gamesUrl = `https://games.roproxy.com/v2/users/${userId}/games?accessFilter=Public&limit=50`;
+        const gamesData = await safeFetch(gamesUrl);
+
+        if (gamesData && gamesData.data) {
+            console.log(`🎮 Found ${gamesData.data.length} public games. Scanning for passes...`);
+            
+            // Loop through each game to get gamepasses
+            for (const game of gamesData.data) {
+                // Use the modern apis.roproxy.com endpoint for gamepasses
+                const passUrl = `https://apis.roproxy.com/game-passes/v1/universes/${game.id}/game-passes?limit=100`;
+                const passData = await safeFetch(passUrl);
+
+                if (passData && passData.gamePasses) {
+                    passData.gamePasses.forEach(pass => {
+                        // IMPORTANT: apis.roblox returns 'price' or null. Ensure it's for sale.
+                        // Since this endpoint doesn't always show price, we'll tag it for price-fetching in Lua if needed.
+                        if (pass.isForSale) {
+                            allItems.push({
+                                Id: pass.id,
+                                Name: pass.name,
+                                Type: "GamePass",
+                                Price: pass.price || 0, // Fallback if price is hidden
+                                ImageId: pass.displayIconImageAssetId
+                            });
+                        }
                     });
                 }
-            });
+            }
         }
 
-        // Sort: Cheapest first
-        allItems.sort((a, b) => a.Price - b.Price);
+        // --- STEP 3: FILTER & SORT ---
+        // Filter out any 0-price items and sort cheapest first
+        const donationItems = allItems.filter(i => i.Price > 0);
+        donationItems.sort((a, b) => a.Price - b.Price);
 
-        console.log(`✅ Success! Sent ${allItems.length} items to Roblox.`);
-        return res.json(allItems);
+        console.log(`✅ Sent ${donationItems.length} personal items to Studio.`);
+        return res.json(donationItems);
 
     } catch (err) {
         console.log("❌ Server error:", err.message);
@@ -104,5 +96,5 @@ app.get("/api/items/:userId", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 ORCA Proxy running on port ${PORT}`);
+    console.log(`🚀 ORCA Proxy (USER-ONLY) running on port ${PORT}`);
 });
