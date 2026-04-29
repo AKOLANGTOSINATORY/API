@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("ORCA Donation Proxy is live!");
+    res.send("ORCA Donation Proxy is live - Gamepass Edition!");
 });
 
 app.get("/api/items/:userId", async (req, res) => {
@@ -18,31 +18,42 @@ app.get("/api/items/:userId", async (req, res) => {
     }
 
     try {
-        console.log(`Fetching items for User: ${userId}`);
-
-        const catalogUrl = `https://catalog.roblox.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=30`;
+        console.log(`Fetching Gamepasses for User: ${userId}`);
         
-        const response = await fetch(catalogUrl);
-        if (!response.ok) {
-            throw new Error(`Roblox API returned status: ${response.status}`);
+        // Step 1: Get all public games (universes) created by the user
+        const gamesRes = await fetch(`https://games.roblox.com/v2/users/${userId}/games?accessFilter=Public&sortOrder=Asc&limit=50`);
+        if (!gamesRes.ok) throw new Error("Failed to fetch user games");
+        const gamesData = await gamesRes.json();
+        
+        let allGamepasses = [];
+
+        // Step 2: Loop through each game and fetch its gamepasses
+        for (const game of gamesData.data) {
+            const passesRes = await fetch(`https://games.roblox.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`);
+            
+            if (passesRes.ok) {
+                const passesData = await passesRes.json();
+                
+                if (passesData.data) {
+                    for (const pass of passesData.data) {
+                        // Only add passes that actually cost Robux
+                        if (pass.price > 0) { 
+                            allGamepasses.push({
+                                Id: pass.id,
+                                Name: pass.name,
+                                Type: "GamePass", // Tags it properly for your UI
+                                Price: pass.price,
+                                ImageId: pass.id, 
+                                Owned: false
+                            });
+                        }
+                    }
+                }
+            }
         }
-        
-        const catalogData = await response.json();
 
-        const formattedItems = (catalogData.data || [])
-            .filter(item => item.price > 0)
-            .map(item => {
-                return {
-                    Id: item.id,
-                    Name: item.name,
-                    Type: "Product",
-                    Price: item.price,
-                    ImageId: item.id,
-                    Owned: false
-                };
-            });
-
-        return res.json(formattedItems);
+        console.log(`Found ${allGamepasses.length} gamepasses for User ${userId}`);
+        return res.json(allGamepasses);
 
     } catch (error) {
         console.error(`❌ Proxy Error for ${userId}:`, error.message);
