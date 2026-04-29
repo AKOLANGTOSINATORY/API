@@ -7,124 +7,36 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("💸 ORCA Donation Proxy (Stable Build) Running");
+    res.send("💸 ORCA Donation Proxy (Ultra-Stable Build) Running");
 });
 
 // ===============================
-// SAFE FETCH (NO DEPENDENCIES)
+// IMPROVED SAFE FETCH
 // ===============================
 async function safeFetch(url) {
     try {
         const res = await fetch(url, {
             headers: {
-                "User-Agent": "Mozilla/5.0"
+                // High-quality User-Agent makes the proxy look like a real person
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                "Accept": "application/json"
             }
         });
 
         if (!res.ok) {
-            console.log(`❌ Failed request: ${url}`);
+            console.log(`⚠️ RoProxy rejected request (Status: ${res.status}) - ${url}`);
             return null;
         }
 
         return await res.json();
     } catch (err) {
-        console.log(`❌ Fetch error: ${err.message}`);
+        console.log(`❌ Network error: ${err.message}`);
         return null;
     }
 }
 
 // ===============================
-// CLOTHING FETCH (SHIRTS + PANTS)
-// ===============================
-async function fetchClothing(userId) {
-    let items = [];
-    const categories = [11, 12];
-
-    for (const category of categories) {
-        let cursor = "";
-        let loops = 0;
-
-        do {
-            const url = `https://catalog.roproxy.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=${category}&Limit=30&Cursor=${cursor}`;
-            const data = await safeFetch(url);
-
-            if (!data || !data.data) break;
-
-            for (const item of data.data) {
-                items.push({
-                    Id: item.id,
-                    Name: item.name,
-                    Type: "Clothing",
-                    Price: item.price || 0,
-                    ImageId: item.id
-                });
-            }
-
-            cursor = data.nextPageCursor;
-            loops++;
-
-        } while (cursor && loops < 5);
-    }
-
-    console.log(`👕 Clothing fetched: ${items.length}`);
-    return items;
-}
-
-// ===============================
-// GAMEPASS FETCH (FIXED + STABLE)
-// ===============================
-async function fetchGamepasses(userId) {
-    let passes = [];
-
-    // Step 1: get games
-    const games = await safeFetch(
-        `https://games.roproxy.com/v2/users/${userId}/games?accessFilter=Public&limit=50`
-    );
-
-    if (!games || !games.data) {
-        console.log("❌ No games found");
-        return [];
-    }
-
-    console.log(`🎮 Games found: ${games.data.length}`);
-
-    // Step 2: fallback-based pass fetching (more stable than game endpoint)
-    for (const game of games.data) {
-        console.log(`➡️ Checking game: ${game.id}`);
-
-        // ⚠️ TRY game-pass endpoint first
-        let passData = await safeFetch(
-            `https://games.roproxy.com/v1/games/${game.id}/game-passes?limit=100`
-        );
-
-        // 🔥 IF FAIL → fallback to catalog-based lookup (REAL FIX)
-        if (!passData || !passData.data) {
-            console.log("⚠️ Game endpoint failed → using catalog fallback");
-
-            passData = await safeFetch(
-                `https://catalog.roproxy.com/v1/search/items/details?Category=9&CreatorTargetId=${userId}&CreatorType=User&Limit=30`
-            );
-        }
-
-        if (!passData || !passData.data) continue;
-
-        for (const pass of passData.data) {
-            passes.push({
-                Id: pass.id,
-                Name: pass.name,
-                Type: "GamePass",
-                Price: pass.price || 0,
-                ImageId: pass.id
-            });
-        }
-    }
-
-    console.log(`💸 Gamepasses fetched: ${passes.length}`);
-    return passes;
-}
-
-// ===============================
-// MAIN API
+// STABLE COMBO FETCH
 // ===============================
 app.get("/api/items/:userId", async (req, res) => {
     const userId = req.params.userId;
@@ -133,24 +45,55 @@ app.get("/api/items/:userId", async (req, res) => {
         return res.status(400).json({ error: "Invalid userId" });
     }
 
-    console.log(`\n🔍 Fetching for user: ${userId}`);
+    console.log(`\n🔍 Fetching ALL items for user: ${userId}`);
 
     try {
-        const clothing = await fetchClothing(userId);
-        const gamepasses = await fetchGamepasses(userId);
+        // We only use TWO URLs now. This prevents RoProxy rate-limiting.
+        const CLOTHING_URL = `https://catalog.roproxy.com/v1/search/items/details?Category=3&Subcategory=3&CreatorTargetId=${userId}&CreatorType=User&Limit=30`;
+        const GAMEPASS_URL = `https://catalog.roproxy.com/v1/search/items/details?Category=9&CreatorTargetId=${userId}&CreatorType=User&Limit=30`;
 
-        let allItems = [...clothing, ...gamepasses];
+        // Run both fetches at the same time for speed
+        const [clothingData, passData] = await Promise.all([
+            safeFetch(CLOTHING_URL),
+            safeFetch(GAMEPASS_URL)
+        ]);
 
-        console.log(`📦 Total before filter: ${allItems.length}`);
+        let allItems = [];
 
-        // 💸 ONLY DONATION ITEMS
-        allItems = allItems.filter(item => item.Price > 0);
+        // Process Clothing
+        if (clothingData && clothingData.data) {
+            clothingData.data.forEach(item => {
+                if (item.price && item.price > 0) {
+                    allItems.push({
+                        Id: item.id,
+                        Name: item.name,
+                        Type: "Clothing",
+                        Price: item.price,
+                        ImageId: item.id
+                    });
+                }
+            });
+        }
 
-        console.log(`💰 After filter: ${allItems.length}`);
+        // Process Gamepasses
+        if (passData && passData.data) {
+            passData.data.forEach(pass => {
+                if (pass.price && pass.price > 0) {
+                    allItems.push({
+                        Id: pass.id,
+                        Name: pass.name,
+                        Type: "GamePass",
+                        Price: pass.price,
+                        ImageId: pass.id
+                    });
+                }
+            });
+        }
 
-        // sort cheapest first
+        // Sort: Cheapest first
         allItems.sort((a, b) => a.Price - b.Price);
 
+        console.log(`✅ Success! Sent ${allItems.length} items to Roblox.`);
         return res.json(allItems);
 
     } catch (err) {
@@ -159,7 +102,6 @@ app.get("/api/items/:userId", async (req, res) => {
     }
 });
 
-// ===============================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 ORCA Proxy running on port ${PORT}`);
