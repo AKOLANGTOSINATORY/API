@@ -56,22 +56,27 @@ app.get("/api/items/:userId", async (req, res) => {
         if (gamesData && gamesData.data) {
             console.log(`🎮 Found ${gamesData.data.length} public games. Scanning for passes...`);
             
-            // Loop through each game to get gamepasses
             for (const game of gamesData.data) {
-                // Use the modern apis.roproxy.com endpoint for gamepasses
-                const passUrl = `https://apis.roproxy.com/game-passes/v1/universes/${game.id}/game-passes?limit=100`;
+                // FIXED: Added passView=Full to properly fetch the modern price structure
+                const passUrl = `https://apis.roproxy.com/game-passes/v1/universes/${game.id}/game-passes?limit=100&passView=Full`;
                 const passData = await safeFetch(passUrl);
 
                 if (passData && passData.gamePasses) {
                     passData.gamePasses.forEach(pass => {
-                        // IMPORTANT: apis.roblox returns 'price' or null. Ensure it's for sale.
-                        // Since this endpoint doesn't always show price, we'll tag it for price-fetching in Lua if needed.
                         if (pass.isForSale) {
+                            // FIXED: Extract price from priceInformation struct or fallback
+                            let actualPrice = 0;
+                            if (pass.priceInformation && pass.priceInformation.defaultPriceInRobux) {
+                                actualPrice = pass.priceInformation.defaultPriceInRobux;
+                            } else if (pass.price) {
+                                actualPrice = pass.price;
+                            }
+
                             allItems.push({
                                 Id: pass.id,
                                 Name: pass.name,
                                 Type: "GamePass",
-                                Price: pass.price || 0, // Fallback if price is hidden
+                                Price: actualPrice,
                                 ImageId: pass.displayIconImageAssetId
                             });
                         }
@@ -81,8 +86,8 @@ app.get("/api/items/:userId", async (req, res) => {
         }
 
         // --- STEP 3: FILTER & SORT ---
-        // Filter out any 0-price items and sort cheapest first
-        const donationItems = allItems.filter(i => i.Price > 0);
+        // Allow items with Price > 0, OR items that are GamePasses with Price === 0 (let the client fetch fallback prices)
+        const donationItems = allItems.filter(i => i.Price > 0 || (i.Type === "GamePass" && i.Price === 0));
         donationItems.sort((a, b) => a.Price - b.Price);
 
         console.log(`✅ Sent ${donationItems.length} personal items to Studio.`);
