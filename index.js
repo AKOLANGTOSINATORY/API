@@ -20,22 +20,26 @@ app.get("/api/items/:userId", async (req, res) => {
     try {
         console.log(`Fetching Gamepasses AND Clothing for User: ${userId}`);
         let allItems = [];
-
-        // ==========================================
-        // STEP 1: FETCH CLOTHING
+// ==========================================
+        // STEP 1: FETCH CLOTHING (Updated with Headers)
         // ==========================================
         try {
-            const catalogUrl = `https://catalog.roblox.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=50`;
-            const catalogRes = await fetch(catalogUrl);
+            const catalogUrl = `https://catalog.roblox.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=30`;
+            const catalogRes = await fetch(catalogUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
             if (catalogRes.ok) {
                 const catalogData = await catalogRes.json();
                 if (catalogData.data) {
                     for (const item of catalogData.data) {
+                        // Filter for Shirts, Pants, T-Shirts (AssetTypes 2, 11, 12)
                         if (item.price > 0) {
                             allItems.push({
                                 Id: item.id,
                                 Name: item.name,
-                                Type: "Clothing", // Tagged as clothing
+                                Type: "Clothing",
                                 Price: item.price,
                                 ImageId: item.id,
                                 Owned: false
