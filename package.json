@@ -1,19 +1,12 @@
 {
-  "name": "nodejs",
+  "name": "orca-proxy",
   "version": "1.0.0",
-  "description": "Roblox rank/promote bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "dotenv": "^17.2.0",
-    "axios": "^1.6.8",
-    "express": "^5.1.0",
-    "noblox.js": "^6.2.0"
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
   }
 }
