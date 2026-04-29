@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("ORCA Donation Proxy is live - Gamepass Edition!");
+    res.send("ORCA Donation Proxy is live - Combo Edition!");
 });
 
 app.get("/api/items/:userId", async (req, res) => {
@@ -18,46 +18,82 @@ app.get("/api/items/:userId", async (req, res) => {
     }
 
     try {
-        console.log(`Fetching Gamepasses for User: ${userId}`);
-        
-        // Step 1: Get all public games (universes) created by the user
-        const gamesRes = await fetch(`https://games.roblox.com/v2/users/${userId}/games?accessFilter=Public&sortOrder=Asc&limit=50`);
-        if (!gamesRes.ok) throw new Error("Failed to fetch user games");
-        const gamesData = await gamesRes.json();
-        
-        let allGamepasses = [];
+        console.log(`Fetching Gamepasses AND Clothing for User: ${userId}`);
+        let allItems = [];
 
-        // Step 2: Loop through each game and fetch its gamepasses
-        for (const game of gamesData.data) {
-            const passesRes = await fetch(`https://games.roblox.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`);
-            
-            if (passesRes.ok) {
-                const passesData = await passesRes.json();
-                
-                if (passesData.data) {
-                    for (const pass of passesData.data) {
-                        // Only add passes that actually cost Robux
-                        if (pass.price > 0) { 
-                            allGamepasses.push({
-                                Id: pass.id,
-                                Name: pass.name,
-                                Type: "GamePass", // Tags it properly for your UI
-                                Price: pass.price,
-                                ImageId: pass.id, 
+        // ==========================================
+        // STEP 1: FETCH CLOTHING
+        // ==========================================
+        try {
+            const catalogUrl = `https://catalog.roblox.com/v1/search/items/details?CreatorTargetId=${userId}&CreatorType=User&Category=3&Limit=50`;
+            const catalogRes = await fetch(catalogUrl);
+            if (catalogRes.ok) {
+                const catalogData = await catalogRes.json();
+                if (catalogData.data) {
+                    for (const item of catalogData.data) {
+                        if (item.price > 0) {
+                            allItems.push({
+                                Id: item.id,
+                                Name: item.name,
+                                Type: "Clothing", // Tagged as clothing
+                                Price: item.price,
+                                ImageId: item.id,
                                 Owned: false
                             });
                         }
                     }
                 }
             }
+        } catch (err) {
+            console.error("Clothing fetch error:", err.message);
         }
 
-        console.log(`Found ${allGamepasses.length} gamepasses for User ${userId}`);
-        return res.json(allGamepasses);
+        // ==========================================
+        // STEP 2: FETCH GAMEPASSES
+        // ==========================================
+        try {
+            const gamesRes = await fetch(`https://games.roblox.com/v2/users/${userId}/games?accessFilter=Public&sortOrder=Asc&limit=50`);
+            if (gamesRes.ok) {
+                const gamesData = await gamesRes.json();
+                if (gamesData.data) {
+                    for (const game of gamesData.data) {
+                        const passesRes = await fetch(`https://games.roblox.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`);
+                        if (passesRes.ok) {
+                            const passesData = await passesRes.json();
+                            if (passesData.data) {
+                                for (const pass of passesData.data) {
+                                    if (pass.price > 0) {
+                                        allItems.push({
+                                            Id: pass.id,
+                                            Name: pass.name,
+                                            Type: "GamePass", // Tagged as gamepass
+                                            Price: pass.price,
+                                            ImageId: pass.id,
+                                            Owned: false
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Gamepass fetch error:", err.message);
+        }
+
+        // ==========================================
+        // STEP 3: SORT & RETURN
+        // ==========================================
+        // Sort items from cheapest to most expensive
+        allItems.sort((a, b) => a.Price - b.Price);
+
+        console.log(`Total items found: ${allItems.length}`);
+        return res.json(allItems);
 
     } catch (error) {
-        console.error(`❌ Proxy Error for ${userId}:`, error.message);
-        return res.status(500).json({ error: "Failed to fetch donation items" });
+        console.error(`❌ Proxy Error:`, error.message);
+        return res.status(500).json({ error: "Failed to fetch combo items" });
     }
 });
 
