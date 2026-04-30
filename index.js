@@ -9,15 +9,23 @@ app.get("/", (req, res) => {
     res.send("💸 ORCA Proxy (Strict User Mode) Live");
 });
 
-// Helper for RoProxy requests
+// Helper for RoProxy requests (FIXED for JSON crashing)
 async function safeFetch(url) {
     try {
         const res = await fetch(url, {
             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" }
         });
-        return res.ok ? await res.json() : null;
+        
+        if (!res.ok) return null;
+
+        // Read as raw text first to avoid crashing on empty RoProxy responses
+        const text = await res.text();
+        if (!text || text.trim() === "") return null;
+
+        return JSON.parse(text);
     } catch (err) {
-        console.log(`❌ Fetch error: ${err.message}`);
+        // Log a cleaner error so we know it failed, but keep the server alive
+        console.log(`⚠️ Proxy hiccup: ${err.message}`);
         return null;
     }
 }
@@ -57,14 +65,12 @@ app.get("/api/items/:userId", async (req, res) => {
             console.log(`🎮 Found ${gamesData.data.length} public games. Scanning for passes...`);
             
             for (const game of gamesData.data) {
-                // FIXED: Added passView=Full to properly fetch the modern price structure
                 const passUrl = `https://apis.roproxy.com/game-passes/v1/universes/${game.id}/game-passes?limit=100&passView=Full`;
                 const passData = await safeFetch(passUrl);
 
                 if (passData && passData.gamePasses) {
                     passData.gamePasses.forEach(pass => {
                         if (pass.isForSale) {
-                            // FIXED: Extract price from priceInformation struct or fallback
                             let actualPrice = 0;
                             if (pass.priceInformation && pass.priceInformation.defaultPriceInRobux) {
                                 actualPrice = pass.priceInformation.defaultPriceInRobux;
@@ -86,7 +92,6 @@ app.get("/api/items/:userId", async (req, res) => {
         }
 
         // --- STEP 3: FILTER & SORT ---
-        // Allow items with Price > 0, OR items that are GamePasses with Price === 0 (let the client fetch fallback prices)
         const donationItems = allItems.filter(i => i.Price > 0 || (i.Type === "GamePass" && i.Price === 0));
         donationItems.sort((a, b) => a.Price - b.Price);
 
